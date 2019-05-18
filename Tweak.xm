@@ -5,6 +5,67 @@
 #import <SpringBoard/SBMainDisplaySystemGestureManager.h>
 #import <SpringBoard/SBScreenEdgePanGestureRecognizer.h>
 #import <SpringBoard/SBUIController.h>
+#import <version.h>
+
+@interface SBUIController (Chrysalis)
+
+@property (nonatomic, retain) SBScreenEdgePanGestureRecognizer *sideGesture;
+
+- (void)_tbcsAddSideGesture;
+
+@end
+
+%group NEWER
+
+%hook SBUIController
+
+%property (nonatomic, retain) SBScreenEdgePanGestureRecognizer *sideGesture;
+
+-(void)_deviceUILocked {
+	%orig;
+
+	static dispatch_once_t onceToken;
+    dispatch_once (&onceToken, ^{
+		[self _tbcsAddSideGesture];
+	});
+}
+
+%new
+- (void)_tbcsAddSideGesture {
+	self.sideGesture = [[%c(SBScreenEdgePanGestureRecognizer) alloc] initWithTarget:self action:@selector(_handleSwitcherForcePressGesture:) type:SBSystemGestureTypeSwitcherForcePress];
+	self.sideGesture.delegate = self;
+	self.sideGesture.edges = UIRectEdgeLeft;
+	self.sideGesture.maximumNumberOfTouches = 1;
+
+	SBMainDisplaySystemGestureManager *gestureManager = [%c(SBSystemGestureManager) mainDisplayManager];
+	[gestureManager addGestureRecognizer:self.sideGesture withType:SBSystemGestureTypeSwitcherForcePress];
+}
+
+%new
+- (void)_handleSwitcherForcePressGesture:(UIGestureRecognizer *)gestureRecognizer {
+	TBCSWindow *window = [TBCSWindow sharedInstance];
+	CGPoint activationPoint = [gestureRecognizer locationInView:[self window]];
+	switch (gestureRecognizer.state) {
+		case UIGestureRecognizerStateBegan:
+			[window startAppSwitcher:activationPoint];
+			break;
+		case UIGestureRecognizerStateChanged:
+			[window updateToPoint:activationPoint];
+			break;
+		case UIGestureRecognizerStateEnded:
+		case UIGestureRecognizerStateCancelled:
+		case UIGestureRecognizerStateFailed:
+			[window removeFromPoint:activationPoint];
+			break;
+	}
+}
+
+%end
+
+%end
+
+
+%group OLDER
 
 %hook SBUIController
 
@@ -44,7 +105,10 @@
 	}
 }
 
+%end 
+
 %end
+
 
 %hook SBMainDisplaySystemGestureManager
 
@@ -74,5 +138,10 @@
 %ctor {
 	if (IN_SPRINGBOARD) {
 		%init;
+		if(IS_IOS_OR_NEWER(iOS_11_0)) {
+			%init(NEWER);
+		} else {
+			%init(OLDER);
+		}
 	}
 }
